@@ -15,7 +15,8 @@ classdef predictionBreak
             % constructor
             fclose('all');
             obj.wa = wakeAnalysis('~/PhD/Matlab/brainStatesWake_mac.xlsx');
-            mainT_path = '~/PhD/Matlab/prediction_break_trials.csv';
+            % mainT_path = '~/PhD/Matlab/prediction_break_trials.csv';
+            mainT_path = '/Volumes/Data/Regev/prediction_break_trials.csv';
             opts = detectImportOptions(mainT_path);
             opts = setvartype(opts,'flip_time','datetime');
             obj.mainT = readtable(mainT_path, opts);
@@ -62,8 +63,8 @@ classdef predictionBreak
 
             rec_names = obj.get_relevant_rec_names(animalId, eventName, movementType, ...
                                                is_engaged=options.is_engaged, no_strikes=options.no_strikes, ...
-                                               min_trial=options.min_trials);
-            res = cell(4, numel(rec_names)+1);
+                                               min_trials=options.min_trials);
+            res = cell(5, numel(rec_names)+1);
             for i=1:numel(rec_names)
                 if ~mod(i,20)
                     fclose('all')
@@ -86,6 +87,7 @@ classdef predictionBreak
                     res{2, i} = V;
                     res{3, i} = fs;
                     res{4, i} = channel;
+                    res{5, i} = T.trial_id;
                 catch ME
                     fprintf('ERROR: %s,%s; %s\n\n', animalId, rec_names{i}, ME.message);
                 end
@@ -137,10 +139,10 @@ classdef predictionBreak
                 nexttile;
                 for i=1:width(res)
                     V = res{2, i};
-                    title = sprintf('%s - %s - %s - %s\nn_trials = %d', animalId, res{1, i}, movementType, eventName, size(V, 1));
-                    S = obj.run_spectrogram(V, mode([res{3, i}]), title=title, ...
+                    titleText = sprintf('%s - %s - %s - %s\nn_trials = %d', animalId, res{1, i}, movementType, eventName, size(V, 1));
+                    S = obj.run_spectrogram(V, mode([res{3, i}]), title=titleText, ...
                                            freqRange=options.freqRange, WindowSec=options.WindowSec, StepSec=options.StepSec, ...
-                                           time_before=option.time_before, time_after=options.time_after, clim=options.clim);
+                                           time_before=options.time_before, time_after=options.time_after, clim=options.clim);
                     n_plotted = n_plotted + 1;
                     if n_plotted >= options.max_plots_per_figure
                         figure();
@@ -154,8 +156,8 @@ classdef predictionBreak
 
             else  % plot one panel with an average of all traces
                 V = vertcat(res{2, :});
-                title = sprintf('%s - %s - %s - %s\nn_trials = %d', animalId, 'all', movementType, eventName, size(V, 1));
-                S = obj.run_spectrogram(V, mode([res{3, :}]), title=title, isPlot=options.isPlot, ...
+                titleText = sprintf('%s - %s - %s - %s\nn_trials = %d', animalId, 'all', movementType, eventName, size(V, 1));
+                S = obj.run_spectrogram(V, mode([res{3, :}]), title=titleText, isPlot=options.isPlot, ...
                                            freqRange=options.freqRange, WindowSec=options.WindowSec, StepSec=options.StepSec, ...
                                            time_before=options.time_before, time_after=options.time_after, clim=options.clim);
             end
@@ -194,7 +196,7 @@ classdef predictionBreak
             arguments
                 obj predictionBreak
                 S struct
-                options.bandRange double = [30 60]
+                options.bandRange double = [40 100]
                 options.recNamesIdx double = nan
             end
             band = squeeze(mean(S.P_event_dB((options.bandRange(1)<=S.f)&(S.f<=options.bandRange(2)),:, :), 1));
@@ -206,19 +208,19 @@ classdef predictionBreak
         end
 
 
-        function plot_band_statistics(obj, S, options)
+        function p = plot_band_statistics(obj, S, options)
             arguments
                 obj predictionBreak
                 S struct
                 options.bandRange double = [30 60]
                 options.recNamesIdx double = nan 
+                options.isPlotPvalue logical = true
             end
             [pre, post] = obj.get_band_means(S, recNamesIdx=options.recNamesIdx, bandRange=options.bandRange);
             pre  = pre(:);
             post = post(:);
 
-            [h,p,~,s] = ttest(pre, post);
-            stats = s;
+            [~,p,ci,~] = ttest(post, pre, 'Tail','right');
 
             x = [ones(size(pre)); 2*ones(size(post))];
             y = [pre; post];
@@ -236,7 +238,7 @@ classdef predictionBreak
             C = C(m, :);
             
             ax = gca; hold(ax,'on');
-            swarmchart(ax, x, y, 36, C, 'filled');   % now rows(C) == numel(y)
+            swarmchart(ax, x, y, 36, C, 'filled', 'MarkerFaceAlpha', 0.7);   % now rows(C) == numel(y)
 
             % means (optional visual)
             m1 = mean(pre);  m2 = mean(post);
@@ -247,7 +249,7 @@ classdef predictionBreak
             % axes cosmetics
             xlim(ax, [0.5 2.5]);
             set(ax,'XTick',[1 2],'XTickLabel',{'pre','post'});
-            ylabel(ax,'Signal');
+            % ylabel(ax,'Signal');
             box(ax,'off');
 
             % significance bar + stars
@@ -261,24 +263,17 @@ classdef predictionBreak
             plot(ax, [1 2], [yBar yBar], 'k-', 'LineWidth', 1.2);         % top bar
             plot(ax, [1 1], [yBar-0.02*dy yBar], 'k-', 'LineWidth', 1.2); % left tick
             plot(ax, [2 2], [yBar-0.02*dy yBar], 'k-', 'LineWidth', 1.2); % right tick
-            txt = sprintf('p = %.3g  %s', p, stars);
+            
+            if options.isPlotPvalue
+                txt = sprintf('p = %.3g  %s', p, stars);
+            else
+                txt = sprintf('%s', stars);
+            end
             text(1.5, yTxt, txt, 'HorizontalAlignment','center', ...
                  'VerticalAlignment','bottom', 'FontWeight','bold');
 
             % expand ylim to fit annotation
             ylim(ax, [yMin-0.05*dy, yTxt+0.08*dy]);
-
-            function s = p2stars(p)
-                if p < 1e-3
-                    s = '***';
-                elseif p < 1e-2
-                    s = '**';
-                elseif p < 0.05
-                    s = '*';
-                else
-                    s = 'n.s.';
-                end
-            end
         end
         
 
@@ -298,27 +293,25 @@ classdef predictionBreak
                 options.ax logical = false
                 options.bandRange double = nan
                 options.isPutTrialLabels logical = true
+                options.is_cache logical = true
+                options.is_scalebar logical = true
             end
-            [arena, ~, defaultCh] = obj.load_rec(animalId, recName);
-            T = obj.get_table_for_event_name(animalId, eventName, options.is_engaged, recName);
-            channel = defaultCh.*(isnan(options.channel)) + options.channel.*(~isnan(options.channel));
-            if isnan(options.channel), channel = defaultCh; end
-            if ~isnan(trialId)
-                T = T(T.trial_id==trialId, :);
-            end
-            [tEvent, ~] = obj.get_event_in_OE_time(arena, T.(eventName), eventName, animalId, recName);
-            [V, t] = obj.wa.currentDataObj.getData(channel, tEvent-(options.time_before*1000), (options.time_before+options.time_after)*1000);
-            fs = obj.wa.currentDataObj.samplingFrequency(channel);
+            movementType = obj.mainT.movement_type{find(strcmp(obj.mainT.rec_name, recName)&strcmp(obj.mainT.animal_id, animalId),1)};
+            res = obj.load_event_signals(animalId, movementType, eventName, channel=options.channel, time_before=options.time_before, ...
+                                         time_after=options.time_after, is_engaged=options.is_engaged, ...
+                                         no_strikes=options.no_strikes, is_cache=options.is_cache);
+            c = find(strcmp(res(1,:), recName));
+            V = res{2,c};
+            V = V(res{5,c}==trialId,:);
+            fs = res{3,c};
+            t = (1:size(V,2))*(1000/fs);
+
             if ~isnan(options.bandPass)
                 F = filterData(fs);
                 F.lowPassCutoff = options.bandPass(1);
                 F.highPassCutoff = options.bandPass(2);
                 F = F.designBandPass;
                 V = F.getFilteredData(V);
-            end
-            V = squeeze(V);
-            if size(V, 2) == 1 % squeeze flip order if only one segment
-                V = V';
             end
 
             if ~options.ax
@@ -354,11 +347,16 @@ classdef predictionBreak
                 band = mean(S.P_event_dB((options.bandRange(1)<=S.f)&(S.f<=options.bandRange(2)),:), 1);
                 bmin = min(band); bmax = max(band);
                 band  = (band - bmin) ./ max(eps, bmax - bmin);
-                band = smoothdata(band, "sgolay", 17); 
-                plot(S.t, (band/2)-0.5, 'Color', "#1171BE")
-                scalebar(gca, 0, '', 5 / (bmax - bmin)/2, '5dB', 'sw');
-                scalebar(gca, 0.1, '100ms', 100/(vmax - vmin), '100µV', 'nw');
-                axis off
+                band = smoothdata(band, "sgolay", 17);
+                plot(S.t, band-1, 'Color', "#1171BE")
+                ax = gca;
+                if options.is_scalebar
+                    scalebar(ax, 0, '', 5 / (bmax - bmin)/2, '5dB', 'sw', 'Color', '#1171BE');
+                    scalebar(ax, 0, '', 100/(vmax - vmin), '100µV', 'nw');
+                end
+                ax.Box = 'off';  
+                ax.YAxis.Visible = 'off';
+                xlabel('Time (s)')
             end
             if options.isPutTrialLabels
                 titleText = sprintf('%s, %s', animalId, recName);
@@ -468,13 +466,45 @@ classdef predictionBreak
             event_oe_time = arena.oeCamTrigs(event_frame);
         end
 
+        
+        function recs = get_spike_sorting_recs_per_animal(obj, animal_id, eventName, movementType, options)
+            arguments
+                obj predictionBreak
+                animal_id char
+                eventName char
+                movementType char
+                options.root_dir = '/Volumes/Data/Pogona_Vitticeps'
+                options.is_kilosort logical = true
+                options.is_phy = true
+                options.min_trials double = 5
+            end
+            S = dir(fullfile(options.root_dir, animal_id, '*Hunter', '**', 'spikeSorting', 'ch1_32.bin'));  % recursive match
+            binFolders = {S.folder};
+            if options.is_kilosort
+                binFolders = binFolders(cellfun(@(x) isfile(fullfile(x,'kilosort4','spike_clusters.npy')), binFolders));
+            end
+            if options.is_phy
+                binFolders = binFolders(cellfun(@(x) isfile(fullfile(x,'kilosort4','phy.log')), binFolders));
+            end
+            recs = cellfun(@(x) regexp(x, 'Hunter\d+', 'match') ,binFolders, 'UniformOutput' ,false);
+            recs = recs(cellfun(@(x) numel(x)>0, recs));
+            recs = cellfun(@(x) x{1}, recs, 'UniformOutput', false);
+            relevantRecs = obj.get_relevant_rec_names(animal_id, eventName, movementType, min_trials=options.min_trials);
+            recs = recs(ismember(recs, relevantRecs));
+            % sort rec names by hunter number
+            nums = cellfun(@(s) sscanf(s,'Hunter%d'), recs);
+            [~, idx] = sort(nums);
+            recs = recs(idx);
+        end
 
-        function [st, clu, cluster_annot, arena, defaultCh] = get_spikes_data(obj, animalId, recName, isRemoveNoise)
+
+        function [st, clu, cluster_annot, arena, defaultCh, templates] = get_spikes_data(obj, animalId, recName, options)
             arguments
                 obj predictionBreak
                 animalId char
                 recName char
-                isRemoveNoise logical = true
+                options.isRemoveNoise logical = true
+                options.min_ks_count double = 800
             end
             [arena, ~, defaultCh] = obj.load_rec(animalId, recName);
             results_dir = dir(fullfile(obj.wa.currentExpFolder, 'spikeSorting', 'kilosort4'));
@@ -486,17 +516,34 @@ classdef predictionBreak
             st  = readNPY(fullfile(results_dir,'spike_times.npy'));       % samples
             clu = readNPY(fullfile(results_dir,'spike_clusters.npy'));
             cluster_annot = readtable(fullfile(results_dir,'cluster_group.tsv'),'FileType','text');
+            templates = readNPY(fullfile(results_dir,'templates.npy'));
+
+            [~,b] = max(squeeze(max(abs(templates),[],2)),[],2);
+            [m,n,c] = size(templates);
+            [I,J] = ndgrid(1:m, 1:n);              % I,J are m×n
+            K = b(I);                               % m×n, each row i filled with b(i)
+            out = templates(sub2ind([m n c], I, J, K));  % linear index
+            % out is m*n×1; reshape to m×n
+            templates = reshape(out, m, n);
 
             % remove all noise clusters
-            if isRemoveNoise
-                good_clu = cluster_annot.cluster_id(~strcmp(cluster_annot.group, 'noise'));
+            if options.isRemoveNoise
+                if ismember('group', cluster_annot.Properties.VariableNames)
+                    good_clu = cluster_annot.cluster_id(~strcmp(cluster_annot.group, 'noise'));
+                else
+                    % in case no phy was made, use only clusters with 
+                    [u,~,ix] = unique(clu);
+                    counts = accumarray(ix, 1);
+                    good_clu = u(counts>options.min_ks_count);
+                    cluster_annot = renamevars(cluster_annot, 'KSLabel', 'group');
+                end
                 st = st(ismember(clu, good_clu));
                 clu = clu(ismember(clu, good_clu));
             end
         end
         
 
-        function plot_spikes_per_event(obj, animalId, recName, eventName, options)
+        function [res, tEventExit] = analyze_spikes(obj, animalId, recName, eventName, options)
             arguments
                 obj predictionBreak
                 animalId char
@@ -505,89 +552,37 @@ classdef predictionBreak
                 options.is_engaged logical = false
                 options.sec_before double = 3
                 options.sec_after double = 3
-                options.binw double = 100
-                options.ymax double = 100
+                options.binw double = 200 % in milliseconds
                 options.is_remove_noise = true
+                options.is_cache logical = false
             end
-            tiledlayout('flow','TileSpacing','compact','Padding','compact');
-            [st, clu, cluster_annot, arena, defaultCh] = obj.get_spikes_data(animalId, recName, options.is_remove_noise);
-            
+            cacheFile = obj.get_cache_file_name('spikes', options, {'is_cache'}, animalId, recName, eventName);
+            if options.is_cache && isfile(cacheFile)
+                load(cacheFile, 'res', 'tEventExit');
+                return;
+            end
+            [st, clu, cluster_annot, arena, defaultCh, templates] = obj.get_spikes_data(animalId, recName, isRemoveNoise=options.is_remove_noise);
             fs = obj.wa.currentDataObj.samplingFrequency(defaultCh);
             t_ms = 1000 * double(st) / fs;
-
-            T = obj.get_table_for_event_name(animalId, eventName, options.is_engaged, recName);
-            [tEvent, ~] = obj.get_event_in_OE_time(arena, T.(eventName), eventName, animalId, recName);
-            if strcmp(eventName, 'escape_time')
-                [tEventExit, ~] = obj.get_event_in_OE_time(arena, T.exit_time, 'exit_time', animalId, recName);
-            end
-            
-            tStart = tEvent - (options.sec_before * 1000);
-            tEnd = tEvent + (options.sec_after * 1000);
-
-            nI = numel(tStart);
-            counts = cell(nI,1);
-            edges  = cell(nI,1);
-            for k = 1:nI
-                a = tStart(k); b = tEnd(k);
-                if a > b, [a,b] = deal(b,a); end
-                % Bin edges covering [a,b] with width binw (last bin right-inclusive)
-                nBins = max(1, ceil((b - a)/options.binw));
-                e = a + (0:nBins)*options.binw;
-                if e(end) < b, e(end+1) = b; end
-                % Data inside interval
-                x = t_ms(t_ms >= a & t_ms <= b);
-                % Counts
-                counts{k} = histcounts(x, e);
-                edges{k}  = e;
-                % Plot
-                nexttile;
-                histogram((x-tEvent(k))/1000, 'BinEdges', (e-tEvent(k))/1000);  % , 'Normalization', 'probability'
-                xlabel(sprintf('Time (sec)')); ylabel('Count');
-                title(sprintf('Interval %d: [%g, %g], bin=%.3gms', k, a, b, options.binw));
-                ylim([0 options.ymax])
-                xline(0, '--k')
-                if strcmp(eventName, 'escape_time')
-                    xline((tEventExit(k)-tEvent(k))/1000, '--r')
-                end
-                grid on
-            end
-        end
-
-
-        function plot_avg_event_spikes_per_cluster(obj, animalId, recName, eventName, options)
-            arguments
-                obj predictionBreak
-                animalId char
-                recName char
-                eventName char
-                options.is_engaged logical = false
-                options.sec_before double = 3
-                options.sec_after double = 3
-                options.binw double = 100 % in milliseconds
-                options.is_remove_noise = true
-            end
-            [st, clu, cluster_annot, arena, defaultCh] = obj.get_spikes_data(animalId, recName, options.is_remove_noise);
             uniq_clusters = sort(unique(clu));
             
-            fs = obj.wa.currentDataObj.samplingFrequency(defaultCh);
-            t_ms = 1000 * double(st) / fs;
             T = obj.get_table_for_event_name(animalId, eventName, options.is_engaged, recName);
             [tEvent, ~] = obj.get_event_in_OE_time(arena, T.(eventName), eventName, animalId, recName);
+            tEventExit = [];
             if strcmp(eventName, 'escape_time')
                 [tEventExit, ~] = obj.get_event_in_OE_time(arena, T.exit_time, 'exit_time', animalId, recName);
+                tEventExit = (tEventExit - tEvent)/1000;
             end
             tStart = tEvent - (options.sec_before * 1000);
             tEnd = tEvent + (options.sec_after * 1000);
-            nI = numel(tStart);
-            
-            figure();
-            tdl = tiledlayout('flow','TileSpacing','compact','Padding','compact');
-            title(tdl, sprintf('%s, %s, %s', animalId, recName, eventName));
+            nEvents = numel(tStart);
+            res = cell(7, length(uniq_clusters));
             for i = 1:length(uniq_clusters)
                 clusterId = uniq_clusters(i);
-                counts = cell(nI,1);
-                edges  = cell(nI,1);
-                for k = 1:nI
+                counts = cell(nEvents,1);
+                edges  = cell(nEvents,1);
+                spike_times = cell(nEvents,1);
+                for k = 1:nEvents
                     a = tStart(k); b = tEnd(k);
                     if a > b, [a,b] = deal(b,a); end
                     % Bin edges covering [a,b] with width binw (last bin right-inclusive)
@@ -598,18 +593,80 @@ classdef predictionBreak
                     t_ms_clu = t_ms(clu==clusterId);
                     x = t_ms_clu(t_ms_clu >= a & t_ms_clu <= b);
                     % Counts
+                    spike_times{k} = x - tEvent(k);
                     counts{k} = histcounts(x, e);
                     edges{k}  = (e - tEvent(k))/1000;
                 end
-
-                % Plot
-                nexttile;
                 counts = vertcat(counts{:});
                 rate = counts / (options.binw*1000);
-                % t = (0:nBins-1)*options.binW + options.binW/2;
                 t = edges{1}(1:end-1);
-                hold on
+                pVal = calc_pvalue(counts, t);
+                res{1,i} = clusterId;
+                res{2,i} = rate;
+                res{3,i} = t;
+                res{4,i} = spike_times;
+                res{5,i} = pVal;
+                res{6,i} = cluster_annot.group{cluster_annot.cluster_id==clusterId};
+                if clusterId+1 <= size(templates, 1)
+                    res{7,i} = templates(clusterId+1,:);
+                end
+            end
+            save(cacheFile, 'res', 'tEventExit');
+
+
+            function p = calc_pvalue(counts, t)
+                pre = mean(counts(:, (t>-1)&(t<=0)), 2);
+                post = mean(counts(:, (t>0)&(t<=1)), 2);
+                pre  = pre(isfinite(pre));
+                post = post(isfinite(post));
+                [p,h,stats] = signrank(post, pre, 'tail','right');   % 'right' => first arg > second
+            end
+        end
+
+        
+        function plot_avg_event_spikes_per_cluster(obj, animalId, recName, eventName, options)
+            arguments
+                obj predictionBreak
+                animalId char
+                recName char
+                eventName char
+                options.is_engaged logical = false
+                options.sec_before double = 3
+                options.sec_after double = 3
+                options.binw double = 200 % in milliseconds
+                options.is_remove_noise = true
+                options.is_tuned logical = false
+                options.alpha double = 0.05
+                options.is_cache logical = true
+            end
+            
+            res = obj.analyze_spikes(animalId, recName, eventName, is_engaged=options.is_engaged, ...
+                                     sec_before=options.sec_before, sec_after=options.sec_after, ...
+                                     binw=options.binw, is_remove_noise=options.is_remove_noise, is_cache=options.is_cache);
+            if strcmp(eventName, 'flip_time')
+                res = obj.get_spikes_tuned_units_for_flip_trials(res, animalId, recName, is_engaged=options.is_engaged, ...
+                                         sec_before=options.sec_before, sec_after=options.sec_after, ...
+                                         binw=options.binw, is_cache=options.is_cache);
+            end
+            if options.is_tuned
+                res = res(:, cellfun(@(v) v < options.alpha, res(5,:)));
+            end
+            if width(res) == 0
+                return
+            end
+            figure();
+            tdl = tiledlayout('flow','TileSpacing','compact','Padding','compact');
+            title(tdl, sprintf('%s, %s, %s', animalId, recName, eventName),'Interpreter','none');
+            for i = 1:width(res)
+                clusterId = res{1,i};
+                rate = res{2,i};
+                t = res{3,i};
+                pVal = res{5,i};
+                group = res{6,i};
+                % Plot
+                nexttile;
                 plot(t, rate.', 'Color', [0.8 0.8 0.8]);          % each segment (light)
+                hold on
                 m  = mean(rate, 1, 'omitnan');                    % 1 × nBins
                 s  = std(rate, 0, 1, 'omitnan') / sqrt(size(rate,1));  % SEM
                 % Shaded SEM
@@ -620,12 +677,180 @@ classdef predictionBreak
                 xlabel('Time within segment (s)');
                 ylabel('Spike rate (Hz)');
                 box off
-                title(sprintf('Cluster %d (%s)', clusterId, cluster_annot.group{cluster_annot.cluster_id==clusterId}));
+                spikesCount = sum(cellfun(@(x) size(x,1), res{4,i}));
+                title(sprintf('Cluster %d (%s,%d)\np=%.3f', clusterId, group, spikesCount, pVal),'Interpreter','none');
                 xline(0, '--k')
+                xlim([-options.sec_before, options.sec_after])
             end
         end
         
+
+        function plot_spikes_raster_plot(obj, animalId, recName, eventName, options)
+            arguments
+                obj predictionBreak
+                animalId char
+                recName char
+                eventName char
+                options.cluster_id double = nan
+                options.is_engaged logical = false
+                options.sec_before double = 1
+                options.sec_after double = 1
+                options.binw double = 200 % in milliseconds
+                options.is_remove_noise logical = true
+                options.is_tuned logical = true
+                options.alpha double = 0.01
+                options.ax logical = false
+                options.is_cache logical = true
+            end
+
+            res = obj.analyze_spikes(animalId, recName, eventName, is_engaged=options.is_engaged, ...
+                                     sec_before=options.sec_before, sec_after=options.sec_after, ...
+                                     binw=options.binw, is_remove_noise=options.is_remove_noise, is_cache=options.is_cache);
+            if ~isnan(options.cluster_id)
+                idx = find(ismember([res{1,:}],options.cluster_id));
+            else
+                [~,idx] = min(cell2mat(res(5,:)));
+            fprintf('Using cluster ID %d for plotting raster plot\n',res{1,idx})
+            end
+            if ~options.ax
+                figure;
+                subplot(4,5,1)
+            end
+
+            spikes = [res{4,idx}];
+            y = 1;
+            hold on
+            for j=1:size(spikes,2)
+                for i=1:size(spikes,1)
+                    spk = spikes{i,j};
+                    if ~isempty(spk)
+                        plot(spk/1000, y, 'k|', 'MarkerSize', 4)
+                    end
+                    y = y + 1;
+                end
+            end
+            ylim([0, y]);
+            xline(0, 'k')
+            xlabel('Time (s)')
+        end
+
         
+        function [avg_rate, t, exit_times] = get_spike_rates(obj, animalId, recNames, eventName, options)
+            arguments
+                obj predictionBreak
+                animalId char
+                recNames cell
+                eventName char
+                options.is_engaged logical = false
+                options.sec_before double = 2
+                options.sec_after double = 2
+                options.binw double = 100 % in milliseconds
+                options.is_remove_noise logical = true
+                options.is_tuned logical = true
+                options.alpha double = 0.05
+                options.is_cache logical = true
+            end
+            nBins = max(1, ceil(1000*(options.sec_before + options.sec_after)/options.binw));
+            t = ((0:nBins-1) * options.binw)/1000 - options.sec_before;
+            avg_rate = [];
+            exit_times = [];
+            for i=1:numel(recNames)
+                if ~mod(i,20)
+                    fclose('all')
+                end
+                try
+                    [res,tEventExit] = obj.analyze_spikes(animalId, recNames{i}, eventName, is_engaged=options.is_engaged, ...
+                                             sec_before=options.sec_before, sec_after=options.sec_after, ...
+                                             binw=options.binw, is_remove_noise=options.is_remove_noise, is_cache=options.is_cache);
+                    if strcmp(eventName, 'flip_time')
+                        res = obj.get_spikes_tuned_units_for_flip_trials(res, animalId, recNames{i}, is_engaged=options.is_engaged, ...
+                                                 sec_before=options.sec_before, sec_after=options.sec_after, ...
+                                                 binw=options.binw, is_cache=options.is_cache);
+                    end
+                    if options.is_tuned
+                        res = res(:, cellfun(@(v) v < options.alpha, res(5,:)));
+                    end
+                    if width(res) > 1
+                        rates = res(2,:);
+                        avg_rate = [avg_rate; vertcat(rates{:})];
+                        exit_times = [exit_times; tEventExit];
+                    end
+                catch ME
+                    fprintf('ERROR in %s: %s\n', recNames{i}, ME.message);
+                end
+            end
+            avg_rate = movmean(avg_rate, [3 0], 2);  % dim=2 if time is columns
+        end
+
+
+        function [avg_rate, t, exit_times] = plot_avg_spikes_rate(obj, animalId, recNames, eventName, options)
+            arguments
+                obj predictionBreak
+                animalId char
+                recNames cell
+                eventName char
+                options.is_engaged logical = false
+                options.sec_before double = 2
+                options.sec_after double = 2
+                options.binw double = 100 % in milliseconds
+                options.is_remove_noise logical = true
+                options.is_tuned logical = true
+                options.alpha double = 0.05
+                options.ax logical = false
+                options.is_cache logical = true
+            end
+            [avg_rate, t, exit_times] = obj.get_spike_rates(animalId, recNames, eventName, is_engaged=options.is_engaged, ...
+                                                            sec_before=options.sec_before, sec_after=options.sec_after, binw=options.binw, ...
+                                                            is_remove_noise=options.is_remove_noise, is_tuned=options.is_tuned, alpha=options.alpha, ...
+                                                            is_cache=options.is_cache);
+            if ~options.ax
+                figure;
+            end
+            hold on
+            m = mean(avg_rate, 1);
+            sd  = std(avg_rate, 0, 1, 'omitnan'); 
+            sem = sd ./ sqrt(sum(~isnan(avg_rate),1)); 
+            spread = sem;           % <-- choose: sd, sem, or a custom band (see notes)
+            lo = m - spread;
+            hi = m + spread;
+
+            h = plot(t, m, 'LineWidth', 2);
+            c = get(h, 'Color');                            % use same color for the shade
+            fill([t fliplr(t)], [hi fliplr(lo)], c, ...
+                 'FaceAlpha', 0.18, 'EdgeColor', 'none');   % shaded band behind
+            uistack(h, 'top');
+            % plot exit time
+            min_exit = min([min(exit_times) options.sec_after]);
+            max_exit = min([max(exit_times) options.sec_after]);
+            yl = ylim;
+            p = patch([min_exit max_exit max_exit min_exit], [yl(1) yl(1) yl(2) yl(2)], [0.8 0.85 1.0], ...
+                      'EdgeColor','none', 'FaceAlpha',0.4, 'HandleVisibility','off');
+            uistack(p, 'bottom');     % keep the band behind the line
+            xline(0, 'k')
+            xlabel('Time (s)')
+            ylabel('Rate (Hz)')
+        end
+        
+        
+        function flip_res = get_spikes_tuned_units_for_flip_trials(obj, flip_res, animalId, recName, options)
+            arguments
+                obj predictionBreak
+                flip_res cell
+                animalId char
+                recName char
+                options.is_engaged logical = false
+                options.sec_before double = 2
+                options.sec_after double = 2
+                options.binw double = 100 % in milliseconds
+                options.is_cache logical = true
+            end
+            escape_res = obj.analyze_spikes(animalId, recName, 'escape_time', is_engaged=options.is_engaged, ...
+                                             sec_before=options.sec_before, sec_after=options.sec_after, ...
+                                             binw=options.binw, is_cache=options.is_cache);
+            flip_res(5, :) = escape_res(5, :);
+        end
+
+
         function [recNames] = get_recs_for_animal(obj, animal_id, eventName, movementType)
             recNames = unique(obj.mainT.rec_name(strcmp(obj.mainT.animal_id, animal_id)&...
                 ~isnat(obj.mainT.(eventName)) & strcmp(obj.mainT.movement_type, movementType)));
@@ -709,6 +934,11 @@ classdef predictionBreak
             T = obj.get_table_for_event_name(animalId, eventName, options.is_engaged, '', ...
                                              movementType, options.no_strikes);
             recNames = unique(T.rec_name);
+            % sort rec names by hunter number
+            nums = cellfun(@(s) sscanf(s,'Hunter%d'), recNames);
+            [~, idx] = sort(nums);
+            recNames = recNames(idx);
+
             nTrials = height(T);
             nrows = 3;
             totalCols = ceil(nTrials/nrows);
@@ -772,9 +1002,12 @@ classdef predictionBreak
                         % plot beta2gamma
                         nexttile;
                         try
-                            gamma = mean(S.P_event((options.gammaLow<=S.f)&(S.f<=options.gammaHigh),:), 1);
+                            gamma = mean(S.P_event_dB((options.gammaLow<=S.f)&(S.f<=options.gammaHigh),:), 1);
+                            pre = mean(gamma(-1<S.t & S.t<=0));
+                            post = mean(gamma(0<S.t & S.t<1));
                             plot(S.t, gamma)
                             xline(0, '--k')
+                            title(sprintf('%.2f', post-pre))
                             if isEscape
                                 t_exit_sec = (tExit(j)-tEvent(j))/1000;
                                 if t_exit_sec <= options.time_after

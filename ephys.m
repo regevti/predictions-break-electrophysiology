@@ -6,22 +6,83 @@ pb.print_animals()
 %% dispaly events from videos
 
 animal_id = 'PV153';
-event_name = 'escape_time';
+event_name = 'flip_time';
+movement_type = 'circle';
 pb = predictionBreak;
-recNames = pb.get_recs_for_animal(animal_id, event_name, 'low_horizontal_noise');
-pb.display_events(animal_id, recNames{1}, 'right', event_name)
+% recNames = pb.get_recs_for_animal(animal_id, event_name, movement_type);
+pb.display_events(animal_id, 'Hunter42', 'right', event_name)
 
 % PV106, Hunter40 study first escape - strike
 
 %% events spectrograms
 
-animal_id = 'PV153';
+animal_id = 'PV106';
 pb = predictionBreak;
 % recNames = pb.get_recs_for_animal(animal_id);
-% pb.calc_event_spectrogram_for_rec(animal_id,'Hunter48','escape_time',time_before=2,time_after=2,is_engaged=false,freqRange=[1 300]);
 
-pb.plot_all_event_spectrogram(animal_id, 'circle', 'escape_time', min_trials=1, time_before=1, time_after=1, ...
-                              all_together=true, is_engaged=true, freqRange=[1 150], is_cache=true, isPlot=true);
+[S, recNamesIdx] = pb.plot_all_event_spectrogram(animal_id, 'low_horizontal_noise', 'escape_time', min_trials=1, time_before=1, time_after=1, ...
+                              all_together=true, is_engaged=true, freqRange=[1 150], is_cache=false, isPlot=true);
+
+%%
+
+function get_voltage(animal_id, movement_type, event_name, rec_name)
+    pb = predictionBreak;
+    [arena, ~, channel] = pb.load_rec(animal_id, rec_name);
+    T = pb.get_table_for_event_name(animal_id, event_name, true, rec_name, '', true);
+    [tEvent, ~] = pb.get_event_in_OE_time(arena, T.(event_name), event_name, animal_id, rec_name);
+    [V, t] = pb.wa.currentDataObj.getData(channel, tEvent-(1*1000), (1+1)*1000);
+    figure;
+    plot(t, squeeze(V));
+end
+
+get_voltage('PV153', 'circle', 'flip_time', 'Hunter16')
+%% spike sorting example
+
+pb = predictionBreak;
+animal_id = 'PV157';
+event_name = 'escape_time';
+movement_type = 'circle';
+
+% recs = pb.get_spike_sorting_recs_per_animal(animal_id, event_name, movement_type, is_phy=false, min_trials=1);
+% pb.plot_avg_spikes_rate(animal_id, {'Hunter9'}, event_name, alpha=0.01)
+
+pb.plot_avg_spikes_rate(animal_id, {'Hunter35','Hunter43','Hunter51','Hunter54','Hunter87'}, event_name, sec_before=1, sec_after=1, binw=50)
+% pb.plot_avg_spikes_rate('PV106', {'Hunter4','Hunter7','Hunter15','Hunter17'}, event_name, sec_before=1.5, sec_after=1.5, binw=50)
+% pb.plot_avg_spikes_rate('PV157', {'Hunter38','Hunter39','Hunter67','Hunter73','Hunter74','Hunter81','Hunter83'}, event_name, sec_before=1.5, sec_after=1.5, binw=50)
+% pb.plot_avg_spikes_rate('PV106', {'Hunter4','Hunter17','Hunter32'}, event_name, sec_before=1.5, sec_after=1.5, binw=50)
+
+% pb.plot_avg_event_spikes_per_cluster(animal_id, 'Hunter48', event_name, is_tuned=true);
+% pb.plot_spikes_raster_plot(animal_id, 'Hunter45', event_name, cluster_id=[34])
+
+% for i=1:numel(recs)
+%     if ~mod(i,20)
+%         fclose('all')
+%     end
+%     try
+%         pb.plot_avg_event_spikes_per_cluster(animal_id, recs{i}, event_name, is_tuned=true)
+%     catch ME
+%         fprintf('ERROR %s: %s\n', recs{i}, ME.message);
+%     end
+% end
+
+%% 
+
+figure(5)
+nrows = 5;
+ncols = 6;
+tdl = tiledlayout(nrows,ncols,'TileSpacing','compact','Padding','compact','TileIndexing','columnmajor');
+axes = gobjects(nrows,ncols);
+for i=1:ncols
+    axes(1,i) = nexttile([1 2]);
+    axes(2,i) = nexttile([1 2]);
+    axes(3,i) = nexttile;
+    axes(4,i) = nexttile([1 2]);
+    axes(5,i) = nexttile;
+    axes(6,i) = nexttile;
+    axes(7,i) = nexttile;
+end
+
+
 
 %% play trial
 pb = predictionBreak;
@@ -43,32 +104,9 @@ pb.plot_event_segments('PV157', 'Hunter72', 'escape_time', 14, bandRange=[40, 10
 %% plot all trials with images
 
 pb = predictionBreak;
-% pb.plot_all_events_with_images('PV153', 'escape_time', 'circle', cam_name='right')
-% pb.plot_all_events_with_images('PV153', 'escape_time', 'low_horizontal_noise', cam_name='right')
-pb.plot_all_events_with_images('PV153', 'flip_time', 'circle', cam_name='right')
-
-% close all
-% 
-% animals = {'PV106', 'PV157', 'PV126'};
-% for i=1:numel(animals)
-%     pb = predictionBreak;
-%     pb.plot_all_events_with_images(animals{i}, 'escape_time', 'circle', cam_name='right')
-%     close all
-% end
-% 
-% animals = {'PV157', 'PV126'};
-% for i=1:numel(animals)
-%     pb = predictionBreak;
-%     pb.plot_all_events_with_images(animals{i}, 'escape_time', 'low_horizontal_noise', cam_name='right')
-%     close all
-% end
-% 
-% animals = {'PV106', 'PV143'};
-% for i=1:numel(animals)
-%     pb = predictionBreak;
-%     pb.plot_all_events_with_images(animals{i}, 'flip_time', 'circle', cam_name='right')
-%     close all
-% end
+pb.plot_all_events_with_images('PV106', 'escape_time', 'low_horizontal_noise', cam_name='right')
+% pb.plot_all_events_with_images('PV162', 'escape_time', 'low_horizontal_noise', cam_name='right')
+% pb.plot_all_events_with_images('PV106', 'flip_time', 'circle', cam_name='right')
 
 
 %% plot all spectrograms on one figure
@@ -95,16 +133,65 @@ for i=1:numel(animals)
     pb.plot_all_event_spectrogram(animals{i}, 'circle', 'flip_time', min_trials=1, time_before=1, time_after=1, all_together=true, is_engaged=true, freqRange=[1 150], ax=true);
 end
 
-%% spike sorting example
+%% concatenate recs for spike sorting
 
 pb = predictionBreak;
-% pb.plot_avg_event_spikes_per_cluster('PV126', 'Hunter23', 'escape_time', is_remove_noise=false)
+animal_id = 'PV106';
+T = pb.wa.recTable;
+T = T(strcmp(T.Animal, animal_id) & startsWith(T.recNames, "Hunter"),:);
+[G, dates] = findgroups(T.Date);
+foldersByDate = splitapply(@(x){x}, T.folder, G);
+i = 23;
+paths = get_binary_files(foldersByDate{i});
+mergedOutput = sprintf('/Volumes/Data/Regev/merged_binaries/%s_%s.bin', animal_id, dates{i});
+dataRecording.concatenateBinaryFormat(paths, 'targetFileBase', mergedOutput);
 
-% pb.plot_spikes_per_event('PV157', 'Hunter42', 'escape_time')
-% pb.plot_avg_event_spikes_per_cluster('PV157', 'Hunter42', 'escape_time')
 
-% pb.plot_spikes_per_event('PV106', 'Hunter4', 'escape_time', ymax=20)
-pb.plot_avg_event_spikes_per_cluster('PV106', 'Hunter15', 'escape_time')
+
+
+function binaryFiles = get_binary_files(dayC)
+    binaryFiles = cell(size(dayC));
+    for j=1:numel(dayC)
+        binaryFile = sprintf('%s/spikeSorting/ch1_32.bin', dayC{j});
+        if ~isfile(binaryFile)
+            disp('No binary file in %s', dayC)
+            continue
+        end
+        binaryFiles{j} = binaryFile;
+    end
+end
+
+%% fix low_horizontal_noise of PV162
+
+load('~/PhD/Matlab/event_signals_PV162_low_horizontal_noise_escape_time_NaN_1_1_1_1_1.mat', 'res');
+% res = pb.load_event_signals('PV162', 'low_horizontal_noise', 'escape_time', time_before=1, time_after=1, min_trials=1, is_cache=true);
+recName = res{1,1};
+V = res{2,1};
+fs = res{3,1};
+channel = res{4,1};
+trials = res{5,1};
+
+n = size(V,1);
+rng(4);
+idx = randperm(n);
+V = V(idx,:);
+trials = trials(idx);
+ngroup = 2;
+iters = ceil(n / ngroup);
+j1 = 1;
+for i=1:iters
+    res{1,i} = sprintf('%s_%d', recName, i);
+    j2 = min([size(V,1),ngroup*i]);
+    res{2,i} = V(j1:j2,:);
+    res{3,i} = fs;
+    res{4,i} = channel;
+    res{5,i} = trials(j1:j2);
+    j1 = j2 + 1;
+end
+cache_filename = '~/PhD/Matlab/cache/event_signals_PV162_low_horizontal_noise_escape_time_NaN_1_1_1_1_1.mat';
+save(cache_filename, 'res')
+
+
 
 %% errors
 
@@ -118,13 +205,31 @@ pb.plot_avg_event_spikes_per_cluster('PV106', 'Hunter15', 'escape_time')
 
 animal_id = 'PV106';
 pb = predictionBreak;
-recNames = pb.get_recs_for_animal(animal_id);
+recNames = pb.get_recs_for_animal(animal_id, 'escape_time', 'circle');
 for i=1:numel(recNames)
-    pb.sa.setCurrentRecording(sprintf('Animal=PV106,recNames=%s', recNames{i}));
-    OE = pb.sa.currentDataObj;
-    outputName = [OE.recordingDir filesep 'spikeSorting' filesep 'ch1_32.bin'];
-    OE.convert2Binary(outputName);
+    try
+        pb.wa.setCurrentRecording(sprintf('Animal=PV106,recNames=%s', recNames{i}));
+        OE = pb.wa.currentDataObj;
+        outputName = [OE.recordingDir filesep 'spikeSorting' filesep 'ch1_32.bin'];
+        if ~isfile(outputName)
+            fprintf('>> start binary convert for %s\n', recNames{i})
+            OE.convert2Binary(outputName);
+        end
+    catch ME
+        fprintf('ERROR %s: %s\n', recNames{i}, ME.message);
+    end
 end
+
+%%
+% pb = predictionBreak;
+% SA = sleepAnalysis('')
+pb.wa.setCurrentRecording('Animal=PV106,recNames=Hunter25');
+OE = pb.wa.currentDataObj;
+% outputName = [OE.recordingDir filesep 'spibkeSorting' filesep 'ch1_32.bin'];
+OE.convert2Binary('test5.bin', 'electrodeCh', 1:32);
+
+%%
+fclose('all')
 
 %%
 foo_regev()
