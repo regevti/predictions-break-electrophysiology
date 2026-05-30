@@ -15,8 +15,8 @@ classdef predictionBreak
             % constructor
             fclose('all');
             obj.wa = wakeAnalysis('~/PhD/Matlab/brainStatesWake_mac.xlsx');
-            % mainT_path = '~/PhD/Matlab/prediction_break_trials.csv';
-            mainT_path = '/Volumes/Data/Regev/prediction_break_trials.csv';
+            mainT_path = '~/PhD/Matlab/prediction_break_trials.csv';
+            % mainT_path = '/Volumes/Data/Regev/prediction_break_trials.csv';
             opts = detectImportOptions(mainT_path);
             opts = setvartype(opts,'flip_time','datetime');
             obj.mainT = readtable(mainT_path, opts);
@@ -27,9 +27,7 @@ classdef predictionBreak
 
 
         function [arena, T, channel] = load_rec(obj, animalId, recName)
-            % if ~isempty(obj.wa.currentDataObj)
-            %     obj.wa.currentDataObj.closeOpenFiles();
-            % end
+            obj.close_current_data_files();
             obj.wa.setCurrentRecording(sprintf('Animal=%s,recNames=%s', animalId, recName));
             obj.wa.getFilters();
             arena = obj.wa.getArenaCSVs(1);
@@ -38,6 +36,16 @@ classdef predictionBreak
             channel = R.defaulLFPCh(strcmp(R.Animal,animalId)&(strcmp(R.recNames,recName)));
             
             T = obj.mainT(strcmp(obj.mainT.animal_id, animalId) & strcmp(obj.mainT.rec_name, recName), :);
+        end
+
+
+        function close_current_data_files(obj)
+            try
+                if ~isempty(obj.wa) && ~isempty(obj.wa.currentDataObj)
+                    obj.wa.currentDataObj.closeOpenFiles();
+                end
+            catch
+            end
         end
 
 
@@ -208,7 +216,7 @@ classdef predictionBreak
         end
 
 
-        function p = plot_band_statistics(obj, S, options)
+        function [p, stats] = plot_band_statistics(obj, S, options)
             arguments
                 obj predictionBreak
                 S struct
@@ -220,7 +228,7 @@ classdef predictionBreak
             pre  = pre(:);
             post = post(:);
 
-            [~,p,ci,~] = ttest(post, pre, 'Tail','right');
+            [~,p,ci,stats] = ttest(post, pre, 'Tail','right');
 
             x = [ones(size(pre)); 2*ones(size(post))];
             y = [pre; post];
@@ -576,6 +584,12 @@ classdef predictionBreak
             tStart = tEvent - (options.sec_before * 1000);
             tEnd = tEvent + (options.sec_after * 1000);
             nEvents = numel(tStart);
+            if nEvents == 0
+                fprintf('No %s events in %s, returning empty result.\n', eventName, recName);
+                res = cell(7, 0);
+                save(cacheFile, 'res', 'tEventExit');
+                return;
+            end
             res = cell(7, length(uniq_clusters));
             for i = 1:length(uniq_clusters)
                 clusterId = uniq_clusters(i);
@@ -598,7 +612,7 @@ classdef predictionBreak
                     edges{k}  = (e - tEvent(k))/1000;
                 end
                 counts = vertcat(counts{:});
-                rate = counts / (options.binw*1000);
+                rate = counts / (options.binw/1000);
                 t = edges{1}(1:end-1);
                 pVal = calc_pvalue(counts, t);
                 res{1,i} = clusterId;
@@ -685,11 +699,11 @@ classdef predictionBreak
         end
         
 
-        function plot_spikes_raster_plot(obj, animalId, recName, eventName, options)
+        function plot_spikes_raster_plot(obj, animalId, recNames, eventName, options)
             arguments
                 obj predictionBreak
                 animalId char
-                recName char
+                recNames
                 eventName char
                 options.cluster_id double = nan
                 options.is_engaged logical = false
@@ -698,38 +712,148 @@ classdef predictionBreak
                 options.binw double = 200 % in milliseconds
                 options.is_remove_noise logical = true
                 options.is_tuned logical = true
-                options.alpha double = 0.01
+                options.alpha double = 0.05
+                options.bin_width double = 0.01
                 options.ax logical = false
                 options.is_cache logical = true
+                options.is_colorful logical = false   % color trials by (recName, clusterId)
             end
 
-            res = obj.analyze_spikes(animalId, recName, eventName, is_engaged=options.is_engaged, ...
-                                     sec_before=options.sec_before, sec_after=options.sec_after, ...
-                                     binw=options.binw, is_remove_noise=options.is_remove_noise, is_cache=options.is_cache);
-            if ~isnan(options.cluster_id)
-                idx = find(ismember([res{1,:}],options.cluster_id));
-            else
-                [~,idx] = min(cell2mat(res(5,:)));
-            fprintf('Using cluster ID %d for plotting raster plot\n',res{1,idx})
+            % Accept either a single recording name (char/string) or a cell
+            % array of recording names. Trials from all recordings are
+            % concatenated and plotted on one raster.
+            if ischar(recNames) || isstring(recNames)
+                recNames = {char(recNames)};
+            end
+
+            spikes = cell(0, 1);
+            trial_groups  = [];     % integer group id per trial (for is_colorful)
+            group_labels  = {};     % one label per group, used for legend
+            group_rec_idx = [];     % which recName index each group belongs to
+            for r = 1:numel(recNames)
+                recName = recNames{r};
+                try
+                    res = obj.analyze_spikes(animalId, recName, eventName, is_engaged=options.is_engaged, ...
+                                             sec_before=options.sec_before, sec_after=options.sec_after, ...
+                                             binw=options.binw, is_remove_noise=options.is_remove_noise, is_cache=options.is_cache);
+                catch ME
+                    fprintf('ERROR in %s: %s -- skipping\n', recName, ME.message);
+                    continue
+                end
+                if isempty(res) || isempty([res{1,:}])
+                    fprintf('No clusters/events in %s, skipping\n', recName);
+                    continue
+                end
+                if any(~isnan(options.cluster_id))
+                    idx = find(ismember([res{1,:}], options.cluster_id));
+                    if isempty(idx)
+                        fprintf('Cluster id(s) not found in %s, skipping\n', recName);
+                        continue
+                    end
+                else
+                    if options.is_tuned
+                        if strcmp(eventName, 'flip_time')
+                            res = obj.get_spikes_tuned_units_for_flip_trials(res, animalId, recName, is_engaged=options.is_engaged, ...
+                                                     sec_before=options.sec_before, sec_after=options.sec_after, ...
+                                                     binw=options.binw, is_cache=options.is_cache);
+                        end
+                        pVals = cell2mat(res(5,:));
+                        idx = find(pVals < options.alpha);
+                        if isempty(idx)
+                            fprintf('No tuned clusters (p<%.3g) in %s, skipping\n', options.alpha, recName);
+                            continue
+                        end
+                    else
+                        idx = 1:size(res, 2);   % all clusters in this rec
+                    end
+                    fprintf('Using %d cluster(s) from %s\n', numel(idx), recName);
+                end
+                % idx may match multiple clusters (when cluster_id is a vector);
+                % collect trials from every matched cluster.
+                for ii = 1:numel(idx)
+                    trials = res{4, idx(ii)};
+                    if isempty(trials)
+                        continue
+                    end
+                    trials = trials(:);
+                    spikes = [spikes; trials];   % column-cell append
+                    % Record (rec, cluster) group for coloring
+                    clusterId = res{1, idx(ii)};
+                    gid = numel(group_labels) + 1;
+                    trial_groups = [trial_groups; gid * ones(numel(trials), 1)];
+                    group_labels{end+1} = sprintf('%s / clu %d', recName, clusterId);
+                    group_rec_idx(end+1) = r;
+                end
+            end
+            if isempty(spikes)
+                fprintf('No trials found for the requested cluster across the given recordings.\n');
+                return
             end
             if ~options.ax
                 figure;
-                subplot(4,5,1)
+                % subplot(4,5,1)
             end
-
-            spikes = [res{4,idx}];
-            y = 1;
             hold on
-            for j=1:size(spikes,2)
-                for i=1:size(spikes,1)
-                    spk = spikes{i,j};
-                    if ~isempty(spk)
-                        plot(spk/1000, y, 'k|', 'MarkerSize', 4)
+            bins = -1:options.bin_width:1;
+            ntrials = numel(spikes);
+            raster = zeros(length(bins)-1, ntrials);
+            for k = 1:ntrials
+                spk = spikes{k};
+                if ~isempty(spk)
+                    h = histogram(spk/1000, bins);
+                    on_off = double(h.Values > 0);
+                    if options.is_colorful
+                        raster(:, k) = on_off * trial_groups(k);
+                    else
+                        raster(:, k) = on_off;
                     end
-                    y = y + 1;
                 end
             end
-            ylim([0, y]);
+            imagesc(bins(1:end-1), 0:ntrials-1, raster');
+            % axis xy;
+
+            if options.is_colorful
+                nG = max([trial_groups; 1]);
+                % Two-level palette: one base hue per recording, one HSV value
+                % (brightness) shade per cluster inside that recording.
+                uniq_recs = unique(group_rec_idx, 'stable');
+                nUniqRecs = numel(uniq_recs);
+                if nUniqRecs <= 7
+                    base_colors = lines(nUniqRecs);
+                else
+                    base_colors = hsv(nUniqRecs);
+                end
+                group_colors = zeros(nG, 3);
+                for ri = 1:nUniqRecs
+                    r_id     = uniq_recs(ri);
+                    in_rec   = find(group_rec_idx == r_id);
+                    K        = numel(in_rec);
+                    hsv_base = rgb2hsv(base_colors(ri, :));
+                    if K == 1
+                        vs = hsv_base(3);
+                    else
+                        vs = linspace(0.45, 0.95, K);
+                    end
+                    for j = 1:K
+                        group_colors(in_rec(j), :) = hsv2rgb([hsv_base(1), hsv_base(2), vs(j)]);
+                    end
+                end
+                cmap = [1 1 1; group_colors];   % index 0 -> white (no spike), 1..nG -> group colors
+                colormap(gca, cmap);
+                clim([0, nG]);
+                % Legend: one invisible marker per group, colored from cmap
+                leg_h = gobjects(nG, 1);
+                for g = 1:nG
+                    leg_h(g) = plot(nan, nan, 's', 'MarkerFaceColor', cmap(g+1, :), ...
+                                    'MarkerEdgeColor', 'none', 'MarkerSize', 8);
+                end
+                legend(leg_h, group_labels, 'Location', 'eastoutside', 'Interpreter', 'none');
+            else
+                colormap(gca, flipud(gray));
+            end
+
+            ylim([-1, ntrials+1]);
+            xlim([-1-options.bin_width 1+options.bin_width]);
             xline(0, 'k')
             xlabel('Time (s)')
         end
@@ -752,34 +876,65 @@ classdef predictionBreak
             end
             nBins = max(1, ceil(1000*(options.sec_before + options.sec_after)/options.binw));
             t = ((0:nBins-1) * options.binw)/1000 - options.sec_before;
-            avg_rate = [];
+            avg_rate = zeros(0, numel(t));
             exit_times = [];
+            n_chosen_units = zeros(numel(recNames), 2);
             for i=1:numel(recNames)
-                if ~mod(i,20)
-                    fclose('all')
-                end
+                obj.close_current_data_files();
                 try
                     [res,tEventExit] = obj.analyze_spikes(animalId, recNames{i}, eventName, is_engaged=options.is_engaged, ...
                                              sec_before=options.sec_before, sec_after=options.sec_after, ...
                                              binw=options.binw, is_remove_noise=options.is_remove_noise, is_cache=options.is_cache);
                     if strcmp(eventName, 'flip_time')
+                        % use the p-value from the escape trials, since
+                        % there are few flips.
                         res = obj.get_spikes_tuned_units_for_flip_trials(res, animalId, recNames{i}, is_engaged=options.is_engaged, ...
                                                  sec_before=options.sec_before, sec_after=options.sec_after, ...
                                                  binw=options.binw, is_cache=options.is_cache);
                     end
                     if options.is_tuned
+                        n_chosen_units(i, 2) = size(res, 2);
                         res = res(:, cellfun(@(v) v < options.alpha, res(5,:)));
+                        n_chosen_units(i, 1) = size(res, 2);
                     end
-                    if width(res) > 1
-                        rates = res(2,:);
-                        avg_rate = [avg_rate; vertcat(rates{:})];
+                    if width(res) > 0
+                        for ri = 1:width(res)
+                            rate = res{2, ri};
+                            rate_t = res{3, ri};
+                            if isempty(rate)
+                                continue
+                            end
+                            if isempty(avg_rate)
+                                t = rate_t;
+                                avg_rate = zeros(0, numel(t));
+                            end
+                            if size(rate, 2) ~= numel(t)
+                                n = min(size(rate, 2), numel(t));
+                                warning('Spike-rate bin mismatch in %s (%d rate bins, %d time bins); trimming to %d bins.', ...
+                                        recNames{i}, size(rate, 2), numel(t), n);
+                                avg_rate = avg_rate(:, 1:n);
+                                rate = rate(:, 1:n);
+                                t = t(1:n);
+                            end
+                            avg_rate = [avg_rate; rate];
+                        end
                         exit_times = [exit_times; tEventExit];
                     end
+                    obj.close_current_data_files();
                 catch ME
                     fprintf('ERROR in %s: %s\n', recNames{i}, ME.message);
+                    obj.close_current_data_files();
                 end
             end
-            avg_rate = movmean(avg_rate, [3 0], 2);  % dim=2 if time is columns
+            if ~isempty(avg_rate)
+                avg_rate = movmean(avg_rate, [3 0], 2);  % dim=2 if time is columns
+            end
+            c = sum(n_chosen_units, 1);
+            frac = c(1) / c(2);
+            if c(2) == 0
+                frac = NaN;
+            end
+            fprintf('Summary of selected spike units for %s, %s: %d / %d (%.2f)\n', animalId, eventName, c(1), c(2), frac);
         end
 
 
@@ -798,18 +953,45 @@ classdef predictionBreak
                 options.alpha double = 0.05
                 options.ax logical = false
                 options.is_cache logical = true
+                options.smooth_kernel double = 0   % causal Gaussian window length (samples); 0 = no smoothing
             end
             [avg_rate, t, exit_times] = obj.get_spike_rates(animalId, recNames, eventName, is_engaged=options.is_engaged, ...
                                                             sec_before=options.sec_before, sec_after=options.sec_after, binw=options.binw, ...
                                                             is_remove_noise=options.is_remove_noise, is_tuned=options.is_tuned, alpha=options.alpha, ...
                                                             is_cache=options.is_cache);
+            if isempty(avg_rate)
+                fprintf('No spike rates to plot for %s, %s.\n', animalId, eventName);
+                return
+            end
+            % Optional causal half-Gaussian smoothing along the time axis (per unit).
+            % Causal = uses only past samples, so the smoothed response cannot
+            % start before the true event onset (no backward smear across t=0).
+            if options.smooth_kernel > 0 && ~isempty(avg_rate)
+                framelen = options.smooth_kernel;
+                if framelen > size(avg_rate, 2)
+                    warning('smooth_kernel (%d) larger than number of time bins (%d); skipping smoothing.', ...
+                            framelen, size(avg_rate, 2));
+                else
+                    sigma   = framelen / 4;                   % rule of thumb
+                    offsets = 0:(framelen - 1);               % 0 = current bin, 1 = one bin into the past, ...
+                    b       = exp(-(offsets.^2) / (2*sigma^2));
+                    b       = b / sum(b);                     % normalize to unit area
+                    % Pad the start with the first column repeated so the
+                    % filter's zero-state transient doesn't suppress the
+                    % first framelen-1 bins; trim back to the original length.
+                    pad      = repmat(avg_rate(:, 1), 1, framelen - 1);
+                    padded   = [pad, avg_rate];
+                    smoothed = filter(b, 1, padded, [], 2);
+                    avg_rate = smoothed(:, framelen:end);
+                end
+            end
             if ~options.ax
                 figure;
             end
             hold on
             m = mean(avg_rate, 1);
-            sd  = std(avg_rate, 0, 1, 'omitnan'); 
-            sem = sd ./ sqrt(sum(~isnan(avg_rate),1)); 
+            sd  = std(avg_rate, 0, 1, 'omitnan');
+            sem = sd ./ sqrt(sum(~isnan(avg_rate),1));
             spread = sem;           % <-- choose: sd, sem, or a custom band (see notes)
             lo = m - spread;
             hi = m + spread;
@@ -949,6 +1131,9 @@ classdef predictionBreak
             currentPage = 1;
             k = 1;
             for i=1:numel(recNames)
+                if ~mod(i,20)
+                    fclose('all')
+                end
                 try
                     [arena, ~, channel] = obj.load_rec(animalId, recNames{i});
                     Trec = T(strcmp(T.rec_name, recNames{i}), :);
@@ -975,10 +1160,10 @@ classdef predictionBreak
                                 ax=true, freqRange=[1 150]);
                             titleText = sprintf('%s, trial%d',recNames{i},Trec.trial_id(j));
                             tagCol = sprintf('%s_tags', eventName);
-                            if ~options.is_engaged && ~strcmp(Trec.(tagCol){j}, 'not engaged')
-                                titleText = [titleText ' (engaged)'];
+                            if ~options.is_engaged && strcmp(Trec.(tagCol){j}, 'not engaged')
+                                titleText = [titleText ' (not_engaged)'];
                             end
-                            if ~options.no_strikes && ~strcmp(Trec.(tagCol){j}, 'strike')
+                            if ~options.no_strikes && strcmp(Trec.(tagCol){j}, 'strike')
                                 titleText = [titleText ' (strike)'];
                             end
                             title(titleText)
