@@ -211,8 +211,9 @@ classdef predictionBreak
             if ~isnan(options.recNamesIdx)
                 band = splitapply(@(x) mean(x, 2), band, options.recNamesIdx);
             end
-            pre = mean(band(S.t<=0, :), 1);
-            post = mean(band(S.t>0, :), 1);
+            [preMask, postMask] = prediction_break_epoch_masks(S.t);
+            pre = mean(band(preMask, :), 1);
+            post = mean(band(postMask, :), 1);
         end
 
 
@@ -629,10 +630,14 @@ classdef predictionBreak
 
 
             function p = calc_pvalue(counts, t)
-                pre = mean(counts(:, (t>-1)&(t<=0)), 2);
-                post = mean(counts(:, (t>0)&(t<=1)), 2);
-                pre  = pre(isfinite(pre));
-                post = post(isfinite(post));
+                [preMask, postMask] = prediction_break_epoch_masks(t);
+                assert(sum(preMask) == sum(postMask), ...
+                       'Spike pre/post epochs must contain the same number of bins.');
+                pre = mean(counts(:, preMask), 2);
+                post = mean(counts(:, postMask), 2);
+                pairedFinite = isfinite(pre) & isfinite(post);
+                pre = pre(pairedFinite);
+                post = post(pairedFinite);
                 [p,h,stats] = signrank(post, pre, 'tail','right');   % 'right' => first arg > second
             end
         end

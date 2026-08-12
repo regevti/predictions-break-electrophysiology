@@ -85,18 +85,16 @@ function plot_figure6(options)
         axes(5,i) = nexttile;
         strike_recs = arrayfun(@(x) sprintf('Hunter%d', x), spk{si,4}, 'UniformOutput', false);
         [avg_rate, t, ~] = pb.plot_avg_spikes_rate(spk{si,1}, strike_recs, data{i,2}, sec_before=1, sec_after=1, binw=50, ax=true, ...
-                                                    smooth_kernel=11, is_cache=true);
+                                                    is_tuned=false, smooth_kernel=11, is_cache=true);
 
         % lfp gamma comparisons for all animals
         animals = data{i,1};
         axes(6,i) = nexttile;
         for j=1:numel(animals)
-            if j > 1  % no need to run again
-                [S, recNamesIdx] = pb.plot_all_event_spectrogram(animals{j}, data{i,3}, data{i,2}, isPlot=false, ...
-                                              time_before=1, time_after=1, all_together=true, min_trials=1, ...
-                                              is_engaged=true, freqRange=[1 150], is_cache=true);
-                if (~options.isGroupRecs || i>1); recNamesIdx = nan; end
-            end
+            [S, recNamesIdx] = pb.plot_all_event_spectrogram(animals{j}, data{i,3}, data{i,2}, isPlot=false, ...
+                                          time_before=1, time_after=1, all_together=true, min_trials=1, ...
+                                          is_engaged=true, freqRange=[1 150], is_cache=true);
+            if ~options.isGroupRecs; recNamesIdx = nan; end
             [pre, post] = pb.get_band_means(S, bandRange=options.bandRange, recNamesIdx=recNamesIdx);
             plot_greater_than_zero_stat(post, pre, j, animals, 2.3)
             power_diff = post - pre;
@@ -118,14 +116,17 @@ function plot_figure6(options)
             strike_recs = arrayfun(@(x) sprintf('Hunter%d', x), spk{si,4}, 'UniformOutput', false);
             [avg_rate, t, ~] = pb.get_spike_rates(animals{j}, strike_recs, data{i,2}, is_engaged=true, ...
                                                     sec_before=1, sec_after=1, binw=50, ...
-                                                    is_tuned=true, alpha=0.05, is_cache=true);
+                                                    is_tuned=false, alpha=0.05, is_cache=true);
             if isempty(avg_rate)
                 fprintf('No spike-rate data for %s, %s; skipping statistics panel.\n', animals{j}, data{i,2});
                 si = si + 1;
                 continue
             end
-            pre = mean(avg_rate(:,t<=0),2);
-            post = mean(avg_rate(:,t>0),2);
+            [preMask, postMask] = prediction_break_epoch_masks(t);
+            assert(sum(preMask) == sum(postMask), ...
+                   'Spike pre/post epochs must contain the same number of bins.');
+            pre = mean(avg_rate(:,preMask),2);
+            post = mean(avg_rate(:,postMask),2);
             plot_greater_than_zero_stat(post, pre, j, animals, nan)
             rate_diff = post - pre;
             append_figure6_stats(stats_csv, animals{j}, 'spike_rate', data{i,2}, rate_diff);
