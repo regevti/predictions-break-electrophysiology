@@ -183,6 +183,12 @@ function format_linked_rate_axes(rateAxes)
     integerTicks = ceil(sharedLimits(1)):floor(sharedLimits(2));
     set(rateAxes, 'YTick',integerTicks);
     for i = 1:numel(rateAxes)
+        eventBackgrounds = findall(rateAxes(i), 'Type','patch', ...
+                                  'Tag','event-window-background');
+        for j = 1:numel(eventBackgrounds)
+            eventBackgrounds(j).YData = ...
+                [sharedLimits(1) sharedLimits(1) sharedLimits(2) sharedLimits(2)];
+        end
         ytickformat(rateAxes(i), '%.0f');
     end
 end

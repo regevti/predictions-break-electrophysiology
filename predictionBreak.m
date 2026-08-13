@@ -1011,7 +1011,8 @@ classdef predictionBreak
             max_exit = min([max(exit_times) options.sec_after]);
             yl = ylim;
             p = patch([min_exit max_exit max_exit min_exit], [yl(1) yl(1) yl(2) yl(2)], [0.8 0.85 1.0], ...
-                      'EdgeColor','none', 'FaceAlpha',0.4, 'HandleVisibility','off');
+                      'EdgeColor','none', 'FaceAlpha',0.4, 'HandleVisibility','off', ...
+                      'Tag','event-window-background');
             uistack(p, 'bottom');     % keep the band behind the line
             xline(0, 'k')
             xlabel('Time (s)')
