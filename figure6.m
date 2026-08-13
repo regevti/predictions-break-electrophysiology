@@ -138,6 +138,8 @@ function plot_figure6(options)
         end
         format_animal_bar_axis(gca);
     end
+
+    format_linked_rate_axes(axes(5,1:height(data)));
     
     df = table(animal_col, metric_col, label_col, power_col, 'VariableNames', {'animal_id', 'metric', 'label', 'power_diff'});
     
@@ -151,6 +153,38 @@ function plot_figure6(options)
     % set(findall(fig,'Type','line'),'LineWidth',0.75);
     set(findall(fig,'Type','scatter'),'SizeData',10); % adjust if needed
     exportgraphics(fig, sprintf('%s/fig6_script.pdf', pb.outputDir), 'ContentType','vector')
+end
+
+
+function format_linked_rate_axes(rateAxes)
+    rateAxes = rateAxes(isgraphics(rateAxes, 'axes'));
+    allRates = [];
+    for i = 1:numel(rateAxes)
+        rateLines = findobj(rateAxes(i), 'Type','line');
+        for j = 1:numel(rateLines)
+            y = rateLines(j).YData;
+            finiteY = y(isfinite(y));
+            allRates = [allRates; finiteY(:)]; %#ok<AGROW>
+        end
+    end
+    assert(~isempty(allRates), 'No spike-rate traces found for shared y-axis formatting.');
+
+    dataSpan = max(allRates) - min(allRates);
+    if dataSpan == 0
+        dataSpan = max(abs(allRates(1)), 1);
+    end
+    sharedLimits = [min(allRates)-0.15*dataSpan, max(allRates)+0.15*dataSpan];
+    if sharedLimits(1) <= 0
+        sharedLimits(1) = max(eps, 0.8*min(allRates(allRates>0)));
+    end
+
+    linkaxes(rateAxes, 'y');
+    set(rateAxes, 'YLim',sharedLimits);
+    integerTicks = ceil(sharedLimits(1)):floor(sharedLimits(2));
+    set(rateAxes, 'YTick',integerTicks);
+    for i = 1:numel(rateAxes)
+        ytickformat(rateAxes(i), '%.0f');
+    end
 end
 
 
