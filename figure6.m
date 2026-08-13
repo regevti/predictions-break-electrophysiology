@@ -104,7 +104,7 @@ function plot_figure6(options)
             metric_col = [metric_col; repmat({'lfp'}, numel(power_diff), 1)];
             power_col  = [power_col; power_diff(:)];
         end
-        set(gca,'XTick',1:numel(animals),'XTickLabel',animals);
+        format_animal_bar_axis(gca);
         
         % spikes rate comparisons all animals
         axes(7,i) = nexttile;
@@ -136,6 +136,7 @@ function plot_figure6(options)
             power_col  = [power_col; rate_diff(:)];
             si = si + 1;
         end
+        format_animal_bar_axis(gca);
     end
     
     df = table(animal_col, metric_col, label_col, power_col, 'VariableNames', {'animal_id', 'metric', 'label', 'power_diff'});
@@ -161,7 +162,7 @@ function plot_greater_than_zero_stat(post, pre, j, animals, ymax)
     % h_norm = lillietest(dp);
     ste = std(dp, 0, 'omitnan')/sqrt(sum(isfinite(dp)));
     fprintf('%s: t(%d) = %.1f, p = %.3e, CohenHedges: %.3f, %.1f±%.1f\n', animals{j}, stats.df, stats.tstat, p, g, mean(dp), ste);
-    bar(j, mean(dp))
+    bar(j, mean(dp), 'FaceColor','none', 'EdgeColor','k', 'LineWidth',0.75)
     hold on
     errorbar(j, mean(dp), ste, 'k')
     if ~isnan(ymax)
@@ -173,6 +174,20 @@ function plot_greater_than_zero_stat(post, pre, j, animals, ymax)
     text(j, mean(dp)+ste, p2stars(p),'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
     box(gca,'off');
     % ylabel('Post-Pre');
+end
+
+
+function format_animal_bar_axis(ax)
+    set(ax, 'XTick', []);
+    xlabel(ax, 'Animals');
+
+    yl = ylim(ax);
+    integerTicks = ceil(yl(1)):floor(yl(2));
+    if isempty(integerTicks)
+        integerTicks = unique(round(yl));
+    end
+    set(ax, 'YTick', integerTicks);
+    ytickformat(ax, '%.0f');
 end
 
 
