@@ -162,9 +162,12 @@ function plot_greater_than_zero_stat(post, pre, j, animals, ymax)
     % h_norm = lillietest(dp);
     ste = std(dp, 0, 'omitnan')/sqrt(sum(isfinite(dp)));
     fprintf('%s: t(%d) = %.1f, p = %.3e, CohenHedges: %.3f, %.1f±%.1f\n', animals{j}, stats.df, stats.tstat, p, g, mean(dp), ste);
-    bar(j, mean(dp), 'FaceColor','none', 'EdgeColor','k', 'LineWidth',0.75)
+    bar(j, mean(dp), 'FaceColor','none', 'EdgeColor','k', 'LineWidth',0.5)
     hold on
-    errorbar(j, mean(dp), ste, 'k')
+    errorBar = errorbar(j, mean(dp), ste, 'k');
+    if numel(animals) == 4
+        errorBar.CapSize = 3;
+    end
     if ~isnan(ymax)
         ylim([0 ymax])
     else
